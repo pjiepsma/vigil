@@ -41,7 +41,21 @@ android {
 
 dependencies {
     implementation(libs.play.services.wearable)
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.compose)
+    implementation(libs.lifecycle.viewmodel.ktx)
+    implementation(libs.lifecycle.service)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.guava)
+    implementation(libs.compose.navigation)
+    implementation(libs.navigation.compose)
+    implementation(libs.datastore.preferences)
+    implementation(libs.health.services.client)
     implementation(platform(libs.compose.bom))
+    // Material Symbols (extended) pair with Wear Material 3 Expressive / round layouts — see Wear design guides.
+    implementation("androidx.compose.material:material-icons-extended")
     implementation(libs.ui)
     implementation(libs.ui.graphics)
     implementation(libs.ui.tooling.preview)
