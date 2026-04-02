@@ -95,6 +95,43 @@ fun ActiveSessionScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    val spo2Running = ui.metricsSnapshot.spo2MeasurementRunning
+                    val spo2Status = ui.metricsSnapshot.spo2StatusText ?: "Idle"
+                    val spo2Progress = ui.metricsSnapshot.spo2ProgressPct
+                    val spo2Value = ui.metricsSnapshot.spo2Pct
+                    Text(
+                        text =
+                            if (spo2Value != null) {
+                                "SpO2 ${spo2Value}% · $spo2Status"
+                            } else {
+                                "SpO2 -- · $spo2Status"
+                            },
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                    ui.metricsSnapshot.spo2Warning?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFFFFB74D),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    if (spo2Running && spo2Progress != null) {
+                        Text(
+                            text = "SpO2 progress $spo2Progress%",
+                            style = MaterialTheme.typography.labelSmall,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            if (spo2Running) viewModel.stopSpo2Measurement() else viewModel.startSpo2Measurement()
+                        },
+                        modifier = Modifier.fillMaxWidth(0.86f),
+                    ) {
+                        Text(if (spo2Running) "Stop SpO2" else "Measure SpO2")
+                    }
                     ui.metricsSnapshot.alertReason?.let {
                         Text(
                             text = it,

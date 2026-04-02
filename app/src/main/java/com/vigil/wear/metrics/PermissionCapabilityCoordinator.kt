@@ -24,6 +24,7 @@ data class SessionPermissionReadiness(
 
 object PermissionCapabilityCoordinator {
     private const val READ_HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
+    private const val READ_OXYGEN_SATURATION_PERMISSION = "android.permission.health.READ_OXYGEN_SATURATION"
     private const val READ_SKIN_TEMPERATURE_PERMISSION = "android.permission.health.READ_SKIN_TEMPERATURE"
 
     fun launchPermissions(): List<String> = requiredSessionPermissions()
@@ -69,6 +70,7 @@ object PermissionCapabilityCoordinator {
         buildList {
             if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
                 add(READ_HEART_RATE_PERMISSION)
+                add(READ_OXYGEN_SATURATION_PERMISSION)
                 add(READ_SKIN_TEMPERATURE_PERMISSION)
             } else {
                 add(Manifest.permission.BODY_SENSORS)
@@ -77,12 +79,13 @@ object PermissionCapabilityCoordinator {
 
     fun canUseSamsungHealthSensors(context: Context): Boolean =
         isSamsungWatch(context) &&
-            hasPermission(context, samsungPrimaryPermission())
+            samsungHealthSensorPermissions().all { hasPermission(context, it) }
 
     fun sensorSdkAvailability(context: Context): ProviderAvailability {
-        val requiredPermission = samsungPrimaryPermission()
+        val missingSamsungPermissions =
+            samsungHealthSensorPermissions().filterNot { hasPermission(context, it) }
         val permissionState =
-            if (hasPermission(context, requiredPermission)) {
+            if (missingSamsungPermissions.isEmpty()) {
                 PermissionState.Granted
             } else {
                 PermissionState.Denied
@@ -103,7 +106,7 @@ object PermissionCapabilityCoordinator {
                 when {
                     !isSamsungWatch(context) -> "Samsung Galaxy Watch required"
                     permissionState == PermissionState.Denied ->
-                        "Grant ${permissionLabel(requiredPermission)} for Samsung metrics"
+                        "Grant ${missingSamsungPermissions.joinToString { permissionLabel(it) }} for Samsung metrics"
                     skinPermissionMissingOnApi36 ->
                         "Heart rate ready; grant ${permissionLabel(READ_SKIN_TEMPERATURE_PERMISSION)} for skin temperature"
                     else -> "Samsung Health Sensor SDK available"
@@ -150,16 +153,10 @@ object PermissionCapabilityCoordinator {
         Build.MANUFACTURER.equals("samsung", ignoreCase = true) &&
             context.packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH)
 
-    private fun samsungPrimaryPermission(): String =
-        if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
-            READ_HEART_RATE_PERMISSION
-        } else {
-            Manifest.permission.BODY_SENSORS
-        }
-
     private fun permissionLabel(permission: String): String =
         when (permission) {
             READ_HEART_RATE_PERMISSION -> "Heart rate permission"
+            READ_OXYGEN_SATURATION_PERMISSION -> "Oxygen saturation permission"
             READ_SKIN_TEMPERATURE_PERMISSION -> "Skin temperature permission"
             Manifest.permission.BODY_SENSORS -> "Body sensors permission"
             else -> permission.substringAfterLast('.')

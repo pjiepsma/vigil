@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
  */
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
     private val readHeartRatePermission = "android.permission.health.READ_HEART_RATE"
+    private val readOxygenSaturationPermission = "android.permission.health.READ_OXYGEN_SATURATION"
 
 
     private val prefs: VigilPreferences =
@@ -241,6 +242,18 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { prefs.setHapticsEnabled(enabled) }
     }
 
+    fun startSpo2Measurement() {
+        val ctx = getApplication<Application>()
+        if (!VigilSessionService.isRunning(ctx)) return
+        VigilSessionService.startSpo2Measurement(ctx)
+    }
+
+    fun stopSpo2Measurement() {
+        val ctx = getApplication<Application>()
+        if (!VigilSessionService.isRunning(ctx)) return
+        VigilSessionService.stopSpo2Measurement(ctx)
+    }
+
     private fun syncMetrics(ctx: Application) {
         val metricsSnapshot = VigilSessionService.readMetricsSnapshot(ctx)
         val sensorSdk = PermissionCapabilityCoordinator.sensorSdkAvailability(ctx)
@@ -276,6 +289,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         when (permission) {
             Manifest.permission.ACTIVITY_RECOGNITION -> "Activity recognition"
             readHeartRatePermission -> "Heart rate"
+            readOxygenSaturationPermission -> "Oxygen saturation"
             Manifest.permission.BODY_SENSORS -> "Body sensors"
             Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
             Manifest.permission.ACCESS_FINE_LOCATION -> "Location"

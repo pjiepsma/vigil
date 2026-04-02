@@ -86,6 +86,26 @@ object MetricCatalog {
                 supportState = sensorSdk.supportState,
             ),
             MetricReading(
+                metricId = "spo2",
+                title = "Blood oxygen",
+                provider = MetricProvider.SensorSdk,
+                serviceName = "Samsung Health Sensor SDK",
+                sourceKey = "HealthTrackerType.SPO2_ON_DEMAND",
+                kind = MetricKind.Raw,
+                value = snapshot.spo2Pct?.toString() ?: "--",
+                unit = "%",
+                status = oxygenStatus(snapshot.spo2Pct),
+                classifierContribution = "Optional safety signal",
+                availability =
+                    when {
+                        snapshot.spo2MeasurementRunning -> "Measuring..."
+                        !snapshot.spo2StatusText.isNullOrBlank() -> snapshot.spo2StatusText
+                        else -> samsungAvailability(snapshot, sensorSdk)
+                    },
+                permissionState = sensorSdk.permissionState,
+                supportState = sensorSdk.supportState,
+            ),
+            MetricReading(
                 metricId = "watch7_provider",
                 title = "Watch 7 sensor stack",
                 provider = MetricProvider.SensorSdk,
@@ -143,6 +163,15 @@ object MetricCatalog {
         return when {
             v > highAt -> MetricStatus.Critical
             v > warnAt -> MetricStatus.Warning
+            else -> MetricStatus.Normal
+        }
+    }
+
+    private fun oxygenStatus(value: Int?): MetricStatus {
+        val v = value ?: return MetricStatus.Unavailable
+        return when {
+            v < 90 -> MetricStatus.Critical
+            v < 95 -> MetricStatus.Warning
             else -> MetricStatus.Normal
         }
     }

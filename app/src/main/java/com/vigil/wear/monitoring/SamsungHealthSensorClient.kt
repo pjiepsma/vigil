@@ -27,6 +27,9 @@ enum class SamsungProviderState(val uiState: String) {
     ListeningForData("Connected: waiting for sensor samples"),
     HeartRateDataFlowing("Connected: heart-rate data flowing"),
     SkinTemperatureDataFlowing("Connected: skin-temperature data flowing"),
+    SpO2Ready("Connected: SpO2 ready"),
+    SpO2Measuring("Connected: measuring SpO2"),
+    SpO2Completed("Connected: SpO2 measurement completed"),
     TrackerRegistrationFailed("Connected: tracker setup failed"),
     ConnectionFailed("Samsung Health connection failed"),
     Error("Samsung sensor error"),
@@ -39,6 +42,11 @@ data class SamsungSensorReadings(
     val ambientTemperatureC: Float? = null,
     val heartRateStatus: Int? = null,
     val skinTemperatureStatus: Int? = null,
+    val spo2Pct: Int? = null,
+    val spo2Status: Int? = null,
+    val spo2TrackerAvailable: Boolean = false,
+    val spo2MeasurementActive: Boolean = false,
+    val spo2Error: String? = null,
     val providerState: SamsungProviderState = SamsungProviderState.Disconnected,
 )
 
@@ -49,10 +57,13 @@ class SamsungHealthSensorClient(context: Context) {
     @Volatile private var healthTrackingService: HealthTrackingService? = null
     @Volatile private var heartRateTracker: HealthTracker? = null
     @Volatile private var skinTemperatureTracker: HealthTracker? = null
+    @Volatile private var spo2Tracker: HealthTracker? = null
     @Volatile private var heartRateListener: HealthTracker.TrackerEventListener? = null
     @Volatile private var skinTemperatureListener: HealthTracker.TrackerEventListener? = null
+    @Volatile private var spo2Listener: HealthTracker.TrackerEventListener? = null
     @Volatile private var heartRateCallbackCount: Long = 0L
     @Volatile private var skinTemperatureCallbackCount: Long = 0L
+    @Volatile private var spo2CallbackCount: Long = 0L
 
     suspend fun start(): Boolean =
         withContext(Dispatchers.Default) {
@@ -65,7 +76,9 @@ class SamsungHealthSensorClient(context: Context) {
             runCatching {
                 val service = connectService() ?: return@runCatching false
                 healthTrackingService = service
-                registerTrackers(service)
+                val anyTrackerStarted = registerTrackers(service)
+                initializeSpo2Tracker(service)
+                anyTrackerStarted || latestReadings.get().spo2TrackerAvailable
             }.onFailure { throwable ->
                 Log.w(TAG, "Samsung sensor client failed to start", throwable)
                 updateProviderState(SamsungProviderState.Error)
@@ -80,6 +93,43 @@ class SamsungHealthSensorClient(context: Context) {
     }
 
     fun snapshot(): SamsungSensorReadings = latestReadings.get()
+
+    fun startSpo2Measurement(): Boolean {
+        val tracker = spo2Tracker ?: return false
+        if (!latestReadings.get().spo2TrackerAvailable) return false
+        return runCatching {
+            tracker.flush()
+            updateReadings { current ->
+                current.copy(
+                    spo2MeasurementActive = true,
+                    spo2Status = SPO2_CALCULATING,
+                    spo2Pct = null,
+                    spo2Error = null,
+                    providerState = SamsungProviderState.SpO2Measuring,
+                )
+            }
+            true
+        }.onFailure { throwable ->
+            Log.w(TAG, "Failed to start SpO2 measurement", throwable)
+            updateReadings { current ->
+                current.copy(
+                    spo2MeasurementActive = false,
+                    spo2Error = throwable.message ?: "SpO2 start failed",
+                    providerState = SamsungProviderState.Error,
+                )
+            }
+        }.getOrDefault(false)
+    }
+
+    fun stopSpo2Measurement() {
+        updateReadings { current ->
+            current.copy(
+                spo2MeasurementActive = false,
+                providerState = current.providerState.takeUnless { it == SamsungProviderState.SpO2Measuring }
+                    ?: SamsungProviderState.ListeningForData,
+            )
+        }
+    }
 
     private suspend fun connectService(): HealthTrackingService? {
         val service =
@@ -144,6 +194,65 @@ class SamsungHealthSensorClient(context: Context) {
             else -> updateProviderState(SamsungProviderState.TrackerRegistrationFailed)
         }
         return anyTrackerStarted
+    }
+
+    private fun initializeSpo2Tracker(service: HealthTrackingService) {
+        val supportedTrackers = service.trackingCapability.supportHealthTrackerTypes.toSet()
+        if (!supportedTrackers.contains(HealthTrackerType.SPO2_ON_DEMAND)) {
+            updateReadings { current -> current.copy(spo2TrackerAvailable = false) }
+            return
+        }
+        runCatching {
+            val tracker = service.getHealthTracker(HealthTrackerType.SPO2_ON_DEMAND)
+            val listener =
+                object : HealthTracker.TrackerEventListener {
+                    override fun onDataReceived(dataPoints: List<DataPoint>) {
+                        spo2CallbackCount += 1
+                        dataPoints.forEach(::updateSpo2)
+                    }
+
+                    override fun onFlushCompleted() = Unit
+
+                    override fun onError(trackerError: HealthTracker.TrackerError) {
+                        val errorMessage =
+                            when (trackerError) {
+                                HealthTracker.TrackerError.PERMISSION_ERROR -> "SpO2 permission denied"
+                                HealthTracker.TrackerError.SDK_POLICY_ERROR -> "SpO2 blocked by SDK policy"
+                                else -> "SpO2 tracker error: $trackerError"
+                            }
+                        Log.w(TAG, errorMessage)
+                        updateReadings { current ->
+                            current.copy(
+                                spo2MeasurementActive = false,
+                                spo2Error = errorMessage,
+                                providerState = SamsungProviderState.Error,
+                            )
+                        }
+                    }
+                }
+            tracker.setEventListener(listener)
+            spo2Tracker = tracker
+            spo2Listener = listener
+            updateReadings { current ->
+                current.copy(
+                    spo2TrackerAvailable = true,
+                    providerState =
+                        if (current.providerState == SamsungProviderState.ListeningForData) {
+                            SamsungProviderState.SpO2Ready
+                        } else {
+                            current.providerState
+                        },
+                )
+            }
+        }.onFailure { throwable ->
+            Log.w(TAG, "Failed to initialize SpO2 tracker", throwable)
+            updateReadings { current ->
+                current.copy(
+                    spo2TrackerAvailable = false,
+                    spo2Error = throwable.message,
+                )
+            }
+        }
     }
 
     private fun startHeartRateTracker(
@@ -267,6 +376,33 @@ class SamsungHealthSensorClient(context: Context) {
         }
     }
 
+    private fun updateSpo2(dataPoint: DataPoint) {
+        val status: Int? = readValue(dataPoint, ValueKey.SpO2Set.STATUS)
+        val value: Int? = readValue(dataPoint, ValueKey.SpO2Set.SPO2)
+        updateReadings { current ->
+            val completed = status == SPO2_MEASUREMENT_COMPLETED
+            val warning =
+                when (status) {
+                    SPO2_DEVICE_MOVING -> "Keep your wrist still"
+                    SPO2_LOW_SIGNAL -> "Low SpO2 signal quality"
+                    else -> null
+                }
+            current.copy(
+                spo2Status = status ?: current.spo2Status,
+                spo2Pct = if (completed) value ?: current.spo2Pct else current.spo2Pct,
+                spo2MeasurementActive = if (completed) false else current.spo2MeasurementActive,
+                spo2Error = warning ?: current.spo2Error,
+                providerState =
+                    when {
+                        completed -> SamsungProviderState.SpO2Completed
+                        status == SPO2_CALCULATING -> SamsungProviderState.SpO2Measuring
+                        status == SPO2_DEVICE_MOVING || status == SPO2_LOW_SIGNAL -> SamsungProviderState.SpO2Measuring
+                        else -> current.providerState
+                    },
+            )
+        }
+    }
+
     private fun <T> readValue(dataPoint: DataPoint, key: ValueKey<T>): T? =
         runCatching { dataPoint.getValue(key) }.getOrNull()
 
@@ -292,14 +428,18 @@ class SamsungHealthSensorClient(context: Context) {
     private fun stopBlocking() {
         runCatching { heartRateTracker?.unsetEventListener() }
         runCatching { skinTemperatureTracker?.unsetEventListener() }
+        runCatching { spo2Tracker?.unsetEventListener() }
         runCatching { healthTrackingService?.disconnectService() }
         heartRateTracker = null
         skinTemperatureTracker = null
+        spo2Tracker = null
         heartRateListener = null
         skinTemperatureListener = null
+        spo2Listener = null
         healthTrackingService = null
         heartRateCallbackCount = 0L
         skinTemperatureCallbackCount = 0L
+        spo2CallbackCount = 0L
         latestReadings.set(SamsungSensorReadings())
     }
 
@@ -321,6 +461,10 @@ class SamsungHealthSensorClient(context: Context) {
         private const val TAG = "Vigil"
         private const val CONNECTION_TIMEOUT_MS = 5_000L
         private const val SUCCESSFUL_MEASUREMENT_STATUS = 1
+        private const val SPO2_LOW_SIGNAL = -5
+        private const val SPO2_DEVICE_MOVING = -4
+        private const val SPO2_CALCULATING = 0
+        private const val SPO2_MEASUREMENT_COMPLETED = 2
         private val HEART_RATE_PRIORITY =
             listOf(
                 HealthTrackerType.HEART_RATE_CONTINUOUS,
