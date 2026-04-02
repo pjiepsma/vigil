@@ -20,7 +20,9 @@ import com.vigil.wear.classifier.UserStateClassifier
 import com.vigil.wear.data.VigilPreferences
 import com.vigil.wear.feedback.VigilHaptics
 import com.vigil.wear.metrics.PermissionCapabilityCoordinator
-import com.vigil.wear.monitoring.PassiveHeartRateCollector
+import com.vigil.wear.monitoring.SamsungHealthSensorClient
+import com.vigil.wear.monitoring.SamsungProviderState
+import com.vigil.wear.monitoring.SamsungSensorReadings
 import com.vigil.wear.monitoring.StillnessMonitor
 import com.vigil.wear.presentation.MainActivity
 import com.vigil.wear.session.SessionMetricsSnapshot
@@ -40,7 +42,7 @@ class VigilSessionService : LifecycleService() {
     /** Created in [onCreate] — [this] is not a valid [Context] in field initializers. */
     private lateinit var stillnessMonitor: StillnessMonitor
     private lateinit var haptics: VigilHaptics
-    private var heartRateCollector: PassiveHeartRateCollector? = null
+    private var samsungSensorClient: SamsungHealthSensorClient? = null
 
     private var hapticsEnabled: Boolean = true
     private var cooldownMs: Long = VigilPreferences.DEFAULT_COOLDOWN_MS
@@ -51,6 +53,7 @@ class VigilSessionService : LifecycleService() {
     private var endCheckJob: Job? = null
     private var metricsPublishJob: Job? = null
     private var alertCandidateSinceElapsedMs: Long? = null
+    private var metricsPublishCount: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -111,17 +114,18 @@ class VigilSessionService : LifecycleService() {
 
     private fun startMonitoring() {
         stillnessMonitor.start(lifecycleScope, runningMode) { maybeIntervene() }
-        startHeartRateCollectorIfAvailable()
+        startSamsungSensorsIfAvailable()
         startMetricsPublisher()
     }
 
     private fun stopMonitoringOnly() {
         stillnessMonitor.stop()
-        val collector = heartRateCollector
-        heartRateCollector = null
-        lifecycleScope.launch(Dispatchers.Default) { collector?.stop() }
+        val sensorClient = samsungSensorClient
+        samsungSensorClient = null
+        lifecycleScope.launch(Dispatchers.Default) { sensorClient?.stop() }
         metricsPublishJob?.cancel()
         metricsPublishJob = null
+        metricsPublishCount = 0L
         alertCandidateSinceElapsedMs = null
         writeMetricsSnapshot(this, SessionMetricsSnapshot())
     }
@@ -150,7 +154,7 @@ class VigilSessionService : LifecycleService() {
             return
         }
         if (runningMode == VigilMode.Passive) {
-            val bpm = heartRateCollector?.getLastBpm()
+            val bpm = samsungSensorClient?.snapshot()?.heartRateBpm
             if (bpm != null && bpm < PASSIVE_LOW_HR_BPM) {
                 Log.i(TAG, "Intervention: stillness + low HR ($bpm)")
             } else {
@@ -248,7 +252,19 @@ class VigilSessionService : LifecycleService() {
     }
 
     private fun publishMetricsSnapshot() {
-        val hr = heartRateCollector?.getLastBpm()
+        metricsPublishCount += 1
+        val samsungReadings = samsungSensorClient?.snapshot() ?: SamsungSensorReadings()
+        val hr = samsungReadings.heartRateBpm
+        val providerState =
+            when (samsungReadings.providerState) {
+                SamsungProviderState.ListeningForData ->
+                    if (hr == null && samsungReadings.skinTemperatureC == null) {
+                        "Connected: no sensor samples yet"
+                    } else {
+                        SamsungProviderState.ListeningForData.uiState
+                    }
+                else -> samsungReadings.providerState.uiState
+            }
         val variance = stillnessMonitor.getLastVariance()
         val stillFor = stillnessMonitor.getStillForMs()
         val motionMagnitude = variance?.let { kotlin.math.sqrt(it.toDouble()).toFloat() }
@@ -256,14 +272,13 @@ class VigilSessionService : LifecycleService() {
         val input =
             ClassifierInput(
                 heartRateBpm = hr?.toFloat(),
+                hrvRmssdMs = samsungReadings.hrvRmssdMs,
                 accelerometerMagnitudeG = motionMagnitude,
+                skinTempC = samsungReadings.skinTemperatureC,
                 postureHorizontal = posture == "Horizontal",
                 stillForMs = stillFor,
-                // Placeholders until service adapters are integrated.
-                hrvRmssdMs = null,
                 speedMs = null,
                 cadenceSpm = null,
-                skinTempC = null,
                 spo2Pct = null,
                 elevationChangeMpm = null,
             )
@@ -290,17 +305,17 @@ class VigilSessionService : LifecycleService() {
         val snapshot =
             SessionMetricsSnapshot(
                 heartRateBpm = hr,
-                hrvRmssdMs = null,
+                hrvRmssdMs = samsungReadings.hrvRmssdMs,
                 ppgGreenActive = null,
                 spo2Pct = null,
-                skinTempC = null,
+                skinTempC = samsungReadings.skinTemperatureC,
                 accelerometerMagnitudeG = motionMagnitude,
                 posture = posture,
                 barometerHpa = null,
                 speedMs = null,
                 cadenceSpm = null,
                 elevationChangeMpm = null,
-                platformUserState = "UNKNOWN",
+                platformUserState = providerState,
                 gpsActive = null,
                 fallDetected = false,
                 classifiedState = result.state,
@@ -310,21 +325,32 @@ class VigilSessionService : LifecycleService() {
                 reasons = result.reasons,
             )
         writeMetricsSnapshot(this, snapshot)
+        if (metricsPublishCount == 1L || metricsPublishCount % 10L == 0L) {
+            Log.i(
+                TAG,
+                "Metrics publish #$metricsPublishCount provider='$providerState' hr=${snapshot.heartRateBpm} hrv=${snapshot.hrvRmssdMs} skin=${snapshot.skinTempC}",
+            )
+        }
     }
 
-    private fun startHeartRateCollectorIfAvailable() {
-        if (!PermissionCapabilityCoordinator.canUsePassiveHeartRate(this)) {
-            Log.i(TAG, "BODY_SENSORS permission missing; passive HR stays optional")
+    private fun startSamsungSensorsIfAvailable() {
+        if (!PermissionCapabilityCoordinator.canUseSamsungHealthSensors(this)) {
+            Log.i(TAG, "Samsung sensor permissions missing; Watch 7 health sensors stay optional")
             return
         }
         lifecycleScope.launch(Dispatchers.Default) {
             runCatching {
-                val collector = heartRateCollector ?: PassiveHeartRateCollector(this@VigilSessionService)
-                heartRateCollector = collector
-                collector.startIfSupported()
+                val client = samsungSensorClient ?: SamsungHealthSensorClient(this@VigilSessionService)
+                val started = client.start()
+                if (started) {
+                    samsungSensorClient = client
+                } else {
+                    samsungSensorClient = null
+                    Log.w(TAG, "Samsung sensor client connected but no trackers/listeners started")
+                }
             }.onFailure { throwable ->
-                Log.w(TAG, "Passive HR collector failed to start", throwable)
-                heartRateCollector = null
+                Log.w(TAG, "Samsung sensor client failed to start", throwable)
+                samsungSensorClient = null
             }
         }
     }
@@ -360,6 +386,8 @@ class VigilSessionService : LifecycleService() {
         private const val KEY_TARGET_END_MS = "session_target_end_epoch_ms"
         private const val KEY_PAUSED = "session_paused"
         private const val KEY_METRIC_HEART_RATE = "metric_heart_rate"
+        private const val KEY_METRIC_HRV = "metric_hrv"
+        private const val KEY_METRIC_SKIN_TEMP = "metric_skin_temp"
         private const val KEY_METRIC_ACCEL = "metric_accel"
         private const val KEY_METRIC_POSTURE = "metric_posture"
         private const val KEY_METRIC_PLATFORM_STATE = "metric_platform_state"
@@ -464,6 +492,8 @@ class VigilSessionService : LifecycleService() {
                 .remove(KEY_TARGET_END_MS)
                 .remove(KEY_PAUSED)
                 .remove(KEY_METRIC_HEART_RATE)
+                .remove(KEY_METRIC_HRV)
+                .remove(KEY_METRIC_SKIN_TEMP)
                 .remove(KEY_METRIC_ACCEL)
                 .remove(KEY_METRIC_POSTURE)
                 .remove(KEY_METRIC_PLATFORM_STATE)
@@ -478,6 +508,8 @@ class VigilSessionService : LifecycleService() {
         fun writeMetricsSnapshot(context: Context, snapshot: SessionMetricsSnapshot) {
             val e = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             if (snapshot.heartRateBpm == null) e.remove(KEY_METRIC_HEART_RATE) else e.putInt(KEY_METRIC_HEART_RATE, snapshot.heartRateBpm)
+            if (snapshot.hrvRmssdMs == null) e.remove(KEY_METRIC_HRV) else e.putFloat(KEY_METRIC_HRV, snapshot.hrvRmssdMs)
+            if (snapshot.skinTempC == null) e.remove(KEY_METRIC_SKIN_TEMP) else e.putFloat(KEY_METRIC_SKIN_TEMP, snapshot.skinTempC)
             if (snapshot.accelerometerMagnitudeG == null) e.remove(KEY_METRIC_ACCEL) else e.putFloat(KEY_METRIC_ACCEL, snapshot.accelerometerMagnitudeG)
             if (snapshot.posture == null) e.remove(KEY_METRIC_POSTURE) else e.putString(KEY_METRIC_POSTURE, snapshot.posture)
             if (snapshot.platformUserState == null) e.remove(KEY_METRIC_PLATFORM_STATE) else e.putString(KEY_METRIC_PLATFORM_STATE, snapshot.platformUserState)
@@ -508,6 +540,8 @@ class VigilSessionService : LifecycleService() {
                     ?: emptyList()
             return SessionMetricsSnapshot(
                 heartRateBpm = if (p.contains(KEY_METRIC_HEART_RATE)) p.getInt(KEY_METRIC_HEART_RATE, 0) else null,
+                hrvRmssdMs = if (p.contains(KEY_METRIC_HRV)) p.getFloat(KEY_METRIC_HRV, 0f) else null,
+                skinTempC = if (p.contains(KEY_METRIC_SKIN_TEMP)) p.getFloat(KEY_METRIC_SKIN_TEMP, 0f) else null,
                 accelerometerMagnitudeG = if (p.contains(KEY_METRIC_ACCEL)) p.getFloat(KEY_METRIC_ACCEL, 0f) else null,
                 posture = p.getString(KEY_METRIC_POSTURE, null),
                 platformUserState = p.getString(KEY_METRIC_PLATFORM_STATE, null),

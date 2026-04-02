@@ -23,6 +23,9 @@ data class SessionPermissionReadiness(
 }
 
 object PermissionCapabilityCoordinator {
+    private const val READ_HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
+    private const val READ_SKIN_TEMPERATURE_PERMISSION = "android.permission.health.READ_SKIN_TEMPERATURE"
+
     fun launchPermissions(): List<String> = requiredSessionPermissions()
 
     fun missingLaunchPermissions(context: Context): List<String> =
@@ -37,7 +40,7 @@ object PermissionCapabilityCoordinator {
 
     fun optionalSessionPermissions(): List<String> =
         mutableListOf<String>().apply {
-            add(Manifest.permission.BODY_SENSORS)
+            addAll(samsungHealthSensorPermissions())
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }
@@ -62,17 +65,49 @@ object PermissionCapabilityCoordinator {
     fun canUsePassiveHeartRate(context: Context): Boolean =
         hasPermission(context, Manifest.permission.BODY_SENSORS)
 
+    fun samsungHealthSensorPermissions(): List<String> =
+        buildList {
+            if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+                add(READ_HEART_RATE_PERMISSION)
+                add(READ_SKIN_TEMPERATURE_PERMISSION)
+            } else {
+                add(Manifest.permission.BODY_SENSORS)
+            }
+        }.distinct()
+
+    fun canUseSamsungHealthSensors(context: Context): Boolean =
+        isSamsungWatch(context) &&
+            hasPermission(context, samsungPrimaryPermission())
+
     fun sensorSdkAvailability(context: Context): ProviderAvailability {
-        val bodyPermission =
-            if (hasPermission(context, Manifest.permission.BODY_SENSORS)) {
+        val requiredPermission = samsungPrimaryPermission()
+        val permissionState =
+            if (hasPermission(context, requiredPermission)) {
                 PermissionState.Granted
             } else {
                 PermissionState.Denied
             }
+        val supportState =
+            if (isSamsungWatch(context)) {
+                SupportState.Supported
+            } else {
+                SupportState.Unsupported
+            }
+        val skinPermissionMissingOnApi36 =
+            Build.VERSION.SDK_INT >= ANDROID_16_API &&
+                !hasPermission(context, READ_SKIN_TEMPERATURE_PERMISSION)
         return ProviderAvailability(
-            permissionState = bodyPermission,
-            supportState = SupportState.Unsupported,
-            message = "Samsung Sensor SDK unavailable in this build",
+            permissionState = permissionState,
+            supportState = supportState,
+            message =
+                when {
+                    !isSamsungWatch(context) -> "Samsung Galaxy Watch required"
+                    permissionState == PermissionState.Denied ->
+                        "Grant ${permissionLabel(requiredPermission)} for Samsung metrics"
+                    skinPermissionMissingOnApi36 ->
+                        "Heart rate ready; grant ${permissionLabel(READ_SKIN_TEMPERATURE_PERMISSION)} for skin temperature"
+                    else -> "Samsung Health Sensor SDK available"
+                },
         )
     }
 
@@ -110,4 +145,25 @@ object PermissionCapabilityCoordinator {
 
     private fun hasPermission(context: Context, permission: String): Boolean =
         ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+
+    private fun isSamsungWatch(context: Context): Boolean =
+        Build.MANUFACTURER.equals("samsung", ignoreCase = true) &&
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_WATCH)
+
+    private fun samsungPrimaryPermission(): String =
+        if (Build.VERSION.SDK_INT >= ANDROID_16_API) {
+            READ_HEART_RATE_PERMISSION
+        } else {
+            Manifest.permission.BODY_SENSORS
+        }
+
+    private fun permissionLabel(permission: String): String =
+        when (permission) {
+            READ_HEART_RATE_PERMISSION -> "Heart rate permission"
+            READ_SKIN_TEMPERATURE_PERMISSION -> "Skin temperature permission"
+            Manifest.permission.BODY_SENSORS -> "Body sensors permission"
+            else -> permission.substringAfterLast('.')
+        }
+
+    private const val ANDROID_16_API = 36
 }

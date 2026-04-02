@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.wear.widget.BoxInsetLayout xmlns:android="http://schemas.android.com/apk/res/android"
+xmlns:app="http://schemas.android.com/apk/res-auto"
+xmlns:tools="http://schemas.android.com/tools"
+android:layout_width="match_parent"
+android:layout_height="match_parent"
+android:padding="@dimen/box_inset_layout_padding"
+tools:context="com.samsung.health.multisensortracking.MainActivity"
+tools:deviceIds="wear">
+
+<androidx.constraintlayout.widget.ConstraintLayout
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <Button
+        android:id="@+id/butStart"
+        android:layout_width="100dp"
+        android:layout_height="32dp"
+        android:background="@drawable/button_background"
+        android:text="@string/StartLabel"
+        android:textColor="#ffffff"
+        android:textSize="12sp"
+        android:onClick="performMeasurement"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.86"
+        tools:ignore="TextContrastCheck,TouchTargetSizeCheck" />
+
+    <TextView
+        android:id="@+id/txtStatus"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/StatusDefaultValue"
+        android:textAlignment="center"
+        android:textSize="11sp"
+        android:textColor="@android:color/white"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintEnd_toEndOf="@id/guideline_right"
+        app:layout_constraintStart_toEndOf="@id/guideline_left"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.18" />
+
+    <TextView
+        android:id="@+id/txtSpO2Name"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/SpO2"
+        android:textAlignment="center"
+        android:textSize="11sp"
+        android:textColor="@android:color/white"
+        app:layout_constraintEnd_toEndOf="@id/guideline_right"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="0.38" />
+
+    <TextView
+        android:id="@+id/txtSpO2"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/SpO2DefaultValue"
+        android:textAlignment="textEnd"
+        android:textSize="36sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/txtPercent"
+        app:layout_constraintHorizontal_bias="0.753"
+        app:layout_constraintStart_toStartOf="@+id/guideline_center"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.50" />
+
+    <TextView
+        android:id="@+id/txtPercent"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/TxtPercent"
+        android:textAlignment="center"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        app:layout_constraintTop_toTopOf="@id/txtSpO2"
+        app:layout_constraintEnd_toEndOf="@id/guideline_right"
+        tools:layout_editor_absoluteX="143dp" />
+
+    <TextView
+        android:id="@+id/txtHeartRateName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/HeartRate"
+        android:textAlignment="center"
+        android:textSize="11sp"
+        android:textColor="@android:color/white"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.38" />
+
+    <TextView
+        android:id="@+id/txtHeartRate"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:onClick="onDetails"
+        android:text="@string/HeartRateDefaultValue"
+        android:textAlignment="center"
+        android:textSize="36sp"
+        android:textStyle="bold"
+        android:textColor="@android:color/white"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.50" />
+
+    <TextView
+        android:id="@+id/txtHeartRateDetails"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:onClick="onDetails"
+        android:text="@string/Details"
+        android:textAlignment="center"
+        android:textSize="11sp"
+        android:textColor="#eeeeee"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@id/guideline_left"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.63"
+        tools:ignore="TouchTargetSizeCheck" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.5"/>
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_right"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_end="43dp" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_left"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_begin="43dp" />
+
+    <com.google.android.material.progressindicator.CircularProgressIndicator
+        android:id="@+id/progressBar"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:indeterminate="false"
+        android:max="140"
+        android:progress="0"
+        android:rotation="0"
+        android:visibility="visible"
+        app:indicatorColor="#0284D6"
+        app:indicatorDirectionCircular="clockwise"
+        app:indicatorSize="200dp"
+        app:trackColor="#222222"
+        app:trackCornerRadius="3dp"
+        app:trackThickness="6dp"
+        tools:layout_editor_absoluteX="0dp"
+        tools:layout_editor_absoluteY="0dp" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+</androidx.wear.widget.BoxInsetLayout>
+

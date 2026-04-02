@@ -40,6 +40,8 @@ android {
 }
 
 dependencies {
+    // Samsung distributes the Health Sensor SDK as a local AAR.
+    implementation(files("libs/samsung-health-sensor-api.aar"))
     implementation(libs.play.services.wearable)
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)

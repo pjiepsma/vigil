@@ -14,14 +14,14 @@ object MetricCatalog {
                 metricId = "heart_rate",
                 title = "Heart rate",
                 provider = MetricProvider.SensorSdk,
-                serviceName = "Sensor SDK",
-                sourceKey = "HEART_RATE_CONTINUOUS",
+                serviceName = "Samsung Health Sensor SDK",
+                sourceKey = "HealthTrackerType.HEART_RATE_CONTINUOUS",
                 kind = MetricKind.Raw,
                 value = snapshot.heartRateBpm?.toString() ?: "--",
                 unit = "bpm",
                 status = numericStatus(snapshot.heartRateBpm?.toFloat(), 55f, 145f),
                 classifierContribution = "Effort/rest discriminator",
-                availability = sensorSdk.message,
+                availability = samsungAvailability(snapshot, sensorSdk),
                 permissionState = sensorSdk.permissionState,
                 supportState = sensorSdk.supportState,
             ),
@@ -29,14 +29,14 @@ object MetricCatalog {
                 metricId = "hrv",
                 title = "HRV (RMSSD)",
                 provider = MetricProvider.SensorSdk,
-                serviceName = "Sensor SDK",
-                sourceKey = "HEART_RATE_CONTINUOUS · IBI",
+                serviceName = "Samsung Health Sensor SDK",
+                sourceKey = "HeartRateSet.IBI_LIST",
                 kind = MetricKind.Derived,
                 value = snapshot.hrvRmssdMs?.let { "%.0f".format(it) } ?: "--",
                 unit = "ms",
                 status = numericStatus(snapshot.hrvRmssdMs, 20f, 90f),
                 classifierContribution = "Recovery / arousal context",
-                availability = sensorSdk.message,
+                availability = samsungAvailability(snapshot, sensorSdk),
                 permissionState = sensorSdk.permissionState,
                 supportState = sensorSdk.supportState,
             ),
@@ -71,93 +71,46 @@ object MetricCatalog {
                 supportState = androidSensors.supportState,
             ),
             MetricReading(
-                metricId = "speed",
-                title = "Speed",
-                provider = MetricProvider.HealthServices,
-                serviceName = "ExerciseClient",
-                sourceKey = "DataType.SPEED",
-                kind = MetricKind.Raw,
-                value = snapshot.speedMs?.let { "%.1f".format(it) } ?: "--",
-                unit = "m/s",
-                status = numericStatus(snapshot.speedMs, 0.1f, 2.2f),
-                classifierContribution = "Walking vs Active",
-                availability = healthServices.message,
-                permissionState = healthServices.permissionState,
-                supportState = healthServices.supportState,
-            ),
-            MetricReading(
-                metricId = "cadence",
-                title = "Cadence",
-                provider = MetricProvider.HealthServices,
-                serviceName = "ExerciseClient",
-                sourceKey = "DataType.STEPS_PER_MINUTE",
-                kind = MetricKind.Raw,
-                value = snapshot.cadenceSpm?.let { "%.0f".format(it) } ?: "--",
-                unit = "spm",
-                status = numericStatus(snapshot.cadenceSpm, 10f, 130f),
-                classifierContribution = "Walking/Active cadence match",
-                availability = healthServices.message,
-                permissionState = healthServices.permissionState,
-                supportState = healthServices.supportState,
-            ),
-            MetricReading(
                 metricId = "skin_temp",
                 title = "Skin temperature",
                 provider = MetricProvider.SensorSdk,
-                serviceName = "Sensor SDK",
-                sourceKey = "SKIN_TEMPERATURE_ON_DEMAND",
+                serviceName = "Samsung Health Sensor SDK",
+                sourceKey = "HealthTrackerType.SKIN_TEMPERATURE_CONTINUOUS",
                 kind = MetricKind.Raw,
                 value = snapshot.skinTempC?.let { "%.1f".format(it) } ?: "--",
                 unit = "C",
                 status = numericStatus(snapshot.skinTempC, 35.8f, 37.5f),
                 classifierContribution = "Low-weight context",
-                availability = sensorSdk.message,
+                availability = samsungAvailability(snapshot, sensorSdk),
                 permissionState = sensorSdk.permissionState,
                 supportState = sensorSdk.supportState,
             ),
             MetricReading(
-                metricId = "spo2",
-                title = "SpO2",
+                metricId = "watch7_provider",
+                title = "Watch 7 sensor stack",
                 provider = MetricProvider.SensorSdk,
-                serviceName = "Sensor SDK",
-                sourceKey = "SPO2_ON_DEMAND",
-                kind = MetricKind.Raw,
-                value = snapshot.spo2Pct?.toString() ?: "--",
-                unit = "%",
-                status = numericStatus(snapshot.spo2Pct?.toFloat(), 93f, 100f),
-                classifierContribution = "Low-weight context",
-                availability = sensorSdk.message,
+                serviceName = "Samsung Health Sensor SDK",
+                sourceKey = "Local AAR + Health Platform",
+                kind = MetricKind.PlatformState,
+                value =
+                    when {
+                        sensorSdk.supportState == SupportState.Unsupported -> "Unavailable"
+                        sensorSdk.permissionState == PermissionState.Denied -> "Permission needed"
+                        snapshot.platformUserState?.contains("data flowing", ignoreCase = true) == true -> "Connected"
+                        snapshot.platformUserState?.contains("no sensor samples", ignoreCase = true) == true -> "Waiting for samples"
+                        else -> "Connected"
+                    },
+                status =
+                    when {
+                        sensorSdk.supportState == SupportState.Unsupported -> MetricStatus.Unavailable
+                        sensorSdk.permissionState == PermissionState.Denied -> MetricStatus.Warning
+                        snapshot.platformUserState?.contains("no sensor samples", ignoreCase = true) == true -> MetricStatus.Warning
+                        else -> MetricStatus.Normal
+                    },
+                classifierContribution = "Provider readiness",
+                availability = samsungAvailability(snapshot, sensorSdk),
                 permissionState = sensorSdk.permissionState,
                 supportState = sensorSdk.supportState,
-            ),
-            MetricReading(
-                metricId = "elevation",
-                title = "Elevation change",
-                provider = MetricProvider.HealthServices,
-                serviceName = "ExerciseClient",
-                sourceKey = "DataType.ABSOLUTE_ELEVATION (derived m/min)",
-                kind = MetricKind.Derived,
-                value = snapshot.elevationChangeMpm?.let { "%.1f".format(it) } ?: "--",
-                unit = "m/min",
-                status = numericStatus(snapshot.elevationChangeMpm, 0f, 15f),
-                classifierContribution = "Terrain/exertion context",
-                availability = healthServices.message,
-                permissionState = healthServices.permissionState,
-                supportState = healthServices.supportState,
-            ),
-            MetricReading(
-                metricId = "platform_state",
-                title = "Platform state",
-                provider = MetricProvider.HealthServices,
-                serviceName = "PassiveMonitoringClient",
-                sourceKey = "UserActivityState",
-                kind = MetricKind.PlatformState,
-                value = snapshot.platformUserState ?: "UNKNOWN",
-                status = MetricStatus.Normal,
-                classifierContribution = "Platform context",
-                availability = healthServices.message,
-                permissionState = healthServices.permissionState,
-                supportState = healthServices.supportState,
             ),
             MetricReading(
                 metricId = "classifier",
@@ -178,7 +131,11 @@ object MetricCatalog {
                 permissionState = PermissionState.NotRequired,
                 supportState = SupportState.Supported,
             ),
-        )
+        ).filterNot { reading ->
+            reading.metricId == "watch7_provider" &&
+                sensorSdk.supportState == SupportState.Supported &&
+                sensorSdk.permissionState == PermissionState.Granted
+        }
     }
 
     private fun numericStatus(value: Float?, warnAt: Float, highAt: Float): MetricStatus {
@@ -188,5 +145,15 @@ object MetricCatalog {
             v > warnAt -> MetricStatus.Warning
             else -> MetricStatus.Normal
         }
+    }
+
+    private fun samsungAvailability(
+        snapshot: SessionMetricsSnapshot,
+        sensorSdk: ProviderAvailability,
+    ): String {
+        if (sensorSdk.supportState == SupportState.Unsupported) return sensorSdk.message
+        if (sensorSdk.permissionState == PermissionState.Denied) return sensorSdk.message
+        val providerState = snapshot.platformUserState
+        return if (!providerState.isNullOrBlank()) providerState else sensorSdk.message
     }
 }

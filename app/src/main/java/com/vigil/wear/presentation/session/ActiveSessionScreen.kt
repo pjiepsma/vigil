@@ -127,7 +127,7 @@ private fun MetricPage(metric: MetricReading, modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = metric.provider.name,
+            text = metric.provider.label,
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.primary,
         )

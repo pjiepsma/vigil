@@ -1,10 +1,10 @@
 package com.vigil.wear.metrics
 
-enum class MetricProvider {
-    SensorSdk,
-    AndroidSensors,
-    HealthServices,
-    Classifier,
+enum class MetricProvider(val label: String) {
+    SensorSdk("Samsung SDK"),
+    AndroidSensors("Android sensors"),
+    HealthServices("Health Services"),
+    Classifier("Classifier"),
 }
 
 enum class MetricKind {

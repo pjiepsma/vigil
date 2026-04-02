@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
  * Starting a session starts [VigilSessionService] so monitoring can continue in the background.
  */
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
+    private val readHeartRatePermission = "android.permission.health.READ_HEART_RATE"
+
 
     private val prefs: VigilPreferences =
         (application as? VigilApplication)?.preferences
@@ -273,6 +275,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private fun permissionLabel(permission: String): String =
         when (permission) {
             Manifest.permission.ACTIVITY_RECOGNITION -> "Activity recognition"
+            readHeartRatePermission -> "Heart rate"
             Manifest.permission.BODY_SENSORS -> "Body sensors"
             Manifest.permission.POST_NOTIFICATIONS -> "Notifications"
             Manifest.permission.ACCESS_FINE_LOCATION -> "Location"
